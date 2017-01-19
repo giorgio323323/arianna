@@ -23,6 +23,8 @@
  
 	02gen17	penso a gestire sensore dx e sx
 	numbers 0 (on digital pin 2) and 1 (on digital pin 3)
+	
+	19gen17	differenziale ellettronico
  
  * Simple test for the DRV8833 library.
  * The DRV8833 is a dual motor driver carrier made by Pololu.
@@ -66,7 +68,7 @@ int direzione 		= 1;
 
 
 
-#define SERVO_PIN   		9    	// Digital IO pin connected to the servo pin.
+// #define SERVO_PIN   		9    	// Digital IO pin connected to the servo pin.
 #define SERVO_PAN_PIN  		10    	// Digital IO pin connected to the servo pin.
 #define SERVO_TILT_PIN  	3    	// Digital IO pin connected to the servo pin.
 
@@ -196,7 +198,7 @@ void setup() {
 	Serial.println("Ready!");
 	
 	// attaches the servo on pin .. to the servo object
-	sterzo.attach	 (SERVO_PIN);  		
+	// sterzo.attach	 (SERVO_PIN);  		
 	servoPan.attach  (SERVO_PAN_PIN);
 	servoTilt.attach (SERVO_TILT_PIN);
 	
@@ -263,7 +265,7 @@ char cambia;
 		if (firstRun){
 		Serial.println("start TEST_CONTROLLO mode");
 			angoloSterzo = DIRITTO;
-			sterzo.write(angoloSterzo); 
+			//sterzo.write(angoloSterzo); 
 			servoPan.write(panAngle);
 			firstRun = 0;
 		}
@@ -313,7 +315,7 @@ char cambia;
 					if (angoloSterzo > 180) angoloSterzo = 180;
 				}
 				
-				sterzo.write(angoloSterzo);                  // sets the servo position according to the scaled value 
+				//sterzo.write(angoloSterzo);                  // sets the servo position according to the scaled value 
 				
 				
 				if ( viaLibera < 0 ){
@@ -360,15 +362,7 @@ char cambia;
 							statoRun      = 0;
 						}
 			
-				/*	
-				Serial.print(angoloSterzo);
-				Serial.print(" ,");
-				Serial.print(errore);
-				Serial.print(" ,");
-                                Serial.print(odometro);
-				Serial.print(" ,");
-				Serial.println(motorSpeedRef);
-				*/
+
 			}
 
 			if (statoRun == 0) motorSpeedRef = 0;
@@ -440,7 +434,7 @@ char cambia;
 		    Serial.println("start SERVO mode, enter servo position in degrees [0-180]");
 			firstRun = 0;
 		}
-		sterzo.write(angoloSterzo); // sets the servo position according to the scaled value 
+		//sterzo.write(angoloSterzo); // sets the servo position according to the scaled value 
     }	
     
 	
