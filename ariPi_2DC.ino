@@ -34,7 +34,11 @@
 			code 0000
 			http://wiki.seeedstudio.com/wiki/Bluetooth_Bee
 			
-			
+		
+
+10	verde con punto nero
+11  blu e bianco
+12	blu
  * Simple test for the DRV8833 library.
  * The DRV8833 is a dual motor driver carrier made by Pololu.
  * You can find it here: https://www.pololu.com/product/2130
@@ -46,6 +50,7 @@
 #include <Servo.h> 
 #include <TimerOne.h>
 // #include <NewPing.h> usa interrupt timer2
+#define	DUE_PI	6.28318
 
 //Servo sterzo;          	// create servo object to control a servo 
 Servo servoPan;      	// create servo object to control a servo 
@@ -86,10 +91,11 @@ int direzione 		= 1;
 
 #define L_SIDE_IR			2
 #define R_SIDE_IR			3		// sensore IR dx
-#define GIRO_PIN			21		// sensore su rotazione albero motore
+#define GIRO_DX_PIN			21		// sensore su rotazione albero motore
+#define GIRO_SX_PIN			20		// sensore su rotazione albero motore
 
 #define R_SIDE_FRONT		26	// seleziona sensore frontale
-#define R_SIDE_REAR			28	// sensore posteriore
+#define L_SIDE_FRONT		28	// sensore posteriore
 
 	
 
@@ -114,7 +120,7 @@ unsigned long totTimeAtOne;
 unsigned long measuringTime;
 int startMeasureIRSide  = 0;
 
-long odometroCnt;
+long odometroCnt, odometroDxCnt, odometroSxCnt;
 char BTstate;	
 
 float 	percentoUno;
@@ -125,7 +131,7 @@ char firstRun;
 float lastPosition;
 
 // tempo del controllo sterzo, posizione etc in ms
-#define TEMPO_CONTROLLO 50
+#define TEMPO_CONTROLLO 100
 
 /*	V = w*r	-> w=V/raggio di curvatura
 	a larghezza tra due ruote
@@ -136,10 +142,14 @@ float lastPosition;
 #define S_NEUTRO_FWD		-0.05	// con questo valore va crica diritto
 #define S_NEUTRO_REV		-0.02	// con questo valore va crica diritto
 
-// mm per impulso = sviluppo ruota[mm]/ppr (pulsi per rivoluzione)
-#define GIRO_RUOTA  		10.5
+#define GIRO_RUOTA  		2.625	// 5.25	// mm per impulso*0.5 = sviluppo ruota[mm]/ppr (pulsi per rivoluzione)
+#define GIRO_RUOTA_DX  		2.625	// 5.25	
+#define GIRO_RUOTA_SX  		2.615 	// 5.25	
+#define MIN_TIME_TRA_PULSE 	9		// 18	// tempo minimo tra impulsi encoder per evitare errate letture
+
 #define E_POSIZIONAMENTO  	10
 #define E_APPROCCIO			300
+#define BASELINE 			150.0	// carreggiata
 
 /*
 	MODERATA 		è il pwm di movimento normale
@@ -148,7 +158,7 @@ float lastPosition;
 */
 #define FERMO			0	
 #define MODERATA		190
-#define APPROCCIO		135
+#define APPROCCIO		150
 #define ACCELERAZIONE	160
 #define AVANTI			0
 #define INDIETRO 		1
@@ -170,14 +180,16 @@ char 	laser 			= 0;
 int 	misura;
 float	kp 				= KP_DEF;		// k proporzionale
 float 	MAX_S			= 0.2;			// max_s = LAGHEZZA_A_MEZZI/Raggio massimo 
-
+float 	teta 			= 0.0;					// teta attuale
+float 	xpos, ypos 		= 0.0;
+float 	tetaRef			= 0.0;
 // temporaneo
 
 float VA, VB;
 
 int mode = TEST_STERZO;
 
-char debugBT = 0;
+char debugBT, monitorDati = 0;
 
  
   
@@ -226,10 +238,11 @@ void setup() {
 
 	// setup digital inputs for IR sensors
 	pinMode(R_SIDE_FRONT, 		OUTPUT);
-	pinMode(R_SIDE_REAR, 		OUTPUT);
+	pinMode(L_SIDE_FRONT, 		OUTPUT);
 	pinMode(L_SIDE_IR, 			INPUT);
 	pinMode(R_SIDE_IR, 			INPUT);
-	pinMode(GIRO_PIN,  			INPUT);
+	pinMode(GIRO_DX_PIN,  		INPUT);
+	pinMode(GIRO_SX_PIN,  		INPUT);
 
 	
 	digitalWrite(laserPin, LOW);
@@ -278,12 +291,14 @@ void setup() {
 tolto t2 ovf end */ 
 	
 	attachInterrupt(digitalPinToInterrupt(R_SIDE_IR), cntSideSensor, CHANGE);
-        // pin 3 interrupt 2 ID_000
+        // pin 3 interrupt 1 atMega
 //	attachInterrupt(2, cntSideSensor, CHANGE);
 
 	// odometro dx
 	// pin 21 (atMega) int 2	
-	attachInterrupt(digitalPinToInterrupt(GIRO_PIN), odometroMisuraHW, RISING);
+	attachInterrupt(digitalPinToInterrupt(GIRO_DX_PIN), odometroDxMisuraHW, CHANGE);
+	// pin 20 (atMega) int 3	
+	attachInterrupt(digitalPinToInterrupt(GIRO_SX_PIN), odometroSxMisuraHW, CHANGE);
 
 	/*
 	il BT intasa la seriale !!!
@@ -315,7 +330,7 @@ tolto t2 ovf end */
 unsigned long timeFrozen;
 unsigned long lastTime, lastTimeFast;
 char cambia;
-
+float	teta_;
 
 void loop() {
 
@@ -346,10 +361,10 @@ void loop() {
 		/* statoRun
 		
 			0: fermo
-			1: controllo sterzo e distanza automatico
+			1: controllo sterzo da sensore dx e distanza automatico
+			1: controllo sterzo da sensore dx e distanza automatico
 			2: controllo distanza, strzo da parametro
-		
-		
+			4: controllo distanza, sterzo da parametro da tetaRef vs teta odometria
 		*/
 			
 			//debounce 
@@ -366,7 +381,7 @@ void loop() {
 			}
 
 			// parte a 100 ms
-			if ((millis()-lastTime) > 100){
+			if ((millis()-lastTime) > TEMPO_CONTROLLO){
 //				Serial.println(millis()-lastTime);
 
 				lastTime = millis();
@@ -376,14 +391,24 @@ void loop() {
 				noInterrupts();
 					measureAvailable = 0;
 					errore 		= 0.5 - misuraSideIR(0); // 1=libero  0=vicino
-					viaLibera 	= frontIRstate;
 				interrupts();
 
 				
 				// controllo sterzo da sensore laterale dx
-				if (statoRun == 1){
+				if ((statoRun == 1)||(statoRun == 3)){
+					// a seconda dello stato attivo sensore DX o SX
+					
+					if (statoRun == 1) {
+						digitalWrite( R_SIDE_FRONT,  LOW);
+						digitalWrite( L_SIDE_FRONT, HIGH);
+						raggiorSterzo =   kp*errore; // aggiunto in differenziale + S_NEUTRO; 
+					}
+					else{
+						digitalWrite( R_SIDE_FRONT, HIGH);
+						digitalWrite( L_SIDE_FRONT,  LOW);
+						raggiorSterzo =  -kp*errore; // aggiunto in differenziale + S_NEUTRO; 
+					}
 					// errore +/- 0.5
-					raggiorSterzo =  kp*errore; // aggiunto in differenziale + S_NEUTRO; 
 
 					
 					if (raggiorSterzo < -MAX_S) raggiorSterzo = -MAX_S;
@@ -392,15 +417,38 @@ void loop() {
 				
 //				if (statoRun != 0){
 				if (statoRun == 2){
-					if ( viaLibera < 0 ){
+/*					if ( viaLibera < 0 ){
 						motorSpeedRef = FERMO;
 						direzione 	  = AVANTI;
 					}
-					else{
-						motorSpeedRef = motorSpeedValue;
-						direzione 	  = AVANTI;
-					}
+					else{*/
+					motorSpeedRef = motorSpeedValue;
+					direzione 	  = AVANTI;
+					
 				}
+
+				// controllo sterzo da teta odometro
+				if (statoRun == 4){
+					// Kp 1 ok
+					// if teta > 3.14 -> teta -= 6.28
+					// 0 - (6.27 - 6.28) = 0 - (-0.1) = atteso 0.1
+					// 0 - 0.1  = - 0.1
+					// 3.14 - 3.13 = 0.1
+					// 3.14 - (3.15 - 6.28) = 6.27
+					// if errore > 3.14 errore -= 6.28
+					if (teta > 3.14) teta_ = teta - DUE_PI;
+					else			 teta_ = teta;
+					
+					errore = tetaRef - teta_;
+					if (errore > 3.14) errore -= DUE_PI;
+					
+					raggiorSterzo =   kp*errore; // aggiunto in differenziale + S_NEUTRO; 
+					// errore +/- 0.5
+					
+					if (raggiorSterzo < -1.0) raggiorSterzo = -1.0;
+					if (raggiorSterzo >  1.0) raggiorSterzo =  1.0;
+				}
+				
 				/* gestione raggiungimento target
 				
 						all'approccio si diminuisce la velocità
@@ -415,24 +463,24 @@ void loop() {
 				
 				*/
 				// direzione
-				
-				odometro = odometroCnt*GIRO_RUOTA;
+
+				updatePosition();
 				
 				if ( distanza > odometro )	direzione = AVANTI;
 				else						direzione = INDIETRO;
 				// gestione velocità
 				// se viaggio 
-				if (abs(odometro - lastPosition) < 0.2){
+/*				if (abs(odometro - lastPosition) < 0.2){ // ??? m ???
 					motorSpeedRef = ACCELERAZIONE;
 				}
-				else
+				else*/
 					if ( abs(distanza - odometro) > E_APPROCCIO){
 						motorSpeedRef = motorSpeedValue;
 					}
 					else
-//						if ( abs(distanza - odometro) > E_POSIZIONAMENTO){
-						if ( ( ((distanza - odometro) > E_POSIZIONAMENTO) &&  direzione) ||
-						     ( ((distanza - odometro) < E_POSIZIONAMENTO) && !direzione) ) {
+						if ( abs(distanza - odometro) > E_POSIZIONAMENTO){
+//						if ( ( ((distanza - odometro) > E_POSIZIONAMENTO) &&  direzione) ||
+//						     ( ((distanza - odometro) < E_POSIZIONAMENTO) && !direzione) ) {
 							motorSpeedRef = APPROCCIO;
 						}
 						else{
@@ -456,17 +504,6 @@ void loop() {
 			}// fine temporizzata veloce
 			
 			
-			// a seconda della direzione si attiva sensore frontale 
-			// o posteriore
-			// la guida all'indietro con sensore frontale è instabile
-			if (direzione) {
-				digitalWrite( R_SIDE_FRONT, HIGH);
-				digitalWrite( R_SIDE_REAR ,  LOW);
-			}
-			else{
-				digitalWrite( R_SIDE_FRONT,  LOW);
-				digitalWrite( R_SIDE_REAR , HIGH);
-			}
 			differenziale(motorSpeed);
 			
   
@@ -557,14 +594,34 @@ void loop() {
 	sotto interrupt incremmento contatore interi
 	solo se R != 0
 */
-void odometroMisuraHW(void){
+void odometroDxMisuraHW(void){
+unsigned long pulseTime;
 
-  if (statoRun == 0) return;
-  
-  //digitalWrite(ledPin, !digitalRead(ledPin));
-  if (direzione == AVANTI)  odometroCnt ++;
-  else                      odometroCnt --;
+	if ((millis() - pulseTime) < MIN_TIME_TRA_PULSE) return;
+	pulseTime = millis();
+
+	if (statoRun == 0) return;
+	//Serial.println("dx");
+
+	digitalWrite(ledPin, !digitalRead(ledPin));
+	if (direzione == AVANTI)  odometroDxCnt ++;
+	else                      odometroDxCnt --;
     
+}
+
+void odometroSxMisuraHW(void){
+unsigned long pulseTime;
+
+	if ((millis() - pulseTime) < MIN_TIME_TRA_PULSE) return;
+	pulseTime = millis();
+
+	if (statoRun == 0) return;
+	//Serial.println("Sx");
+
+	digitalWrite(ledPin, !digitalRead(ledPin));
+	if (direzione == AVANTI)  odometroSxCnt ++;
+	else                      odometroSxCnt --;
+
 }
 
 
@@ -744,6 +801,67 @@ static float rs;
 	}
 }
 
+void updatePosition(void){
+
+static long SxCnt_k_1 = 0;	// valore cnt a k-1
+static long DxCnt_k_1 = 0;	// valore cnt a k-1
+static long dDxCnt, dSxCnt;		// delta cnt
+static long letturaDx;			// congelo cnt
+static long letturaSx;			// congelo cnt
+static float deltaC;			// delta cnt
+
+	// valore complessivo: usato temporaneamente
+	odometro = (odometroDxCnt + odometroSxCnt)*GIRO_RUOTA;
+
+	// calcolo evoluzione nel periodo 
+	
+	// congelo le letture per lavorare su valori coerenti
+	
+	noInterrupts();
+		letturaDx= odometroDxCnt;
+		letturaSx= odometroSxCnt;
+	interrupts();
+	
+	dDxCnt   = letturaDx - DxCnt_k_1;				// delta sx e dx in count
+	dSxCnt   = letturaSx - SxCnt_k_1;
+	
+	deltaC   = (dDxCnt + dSxCnt)*GIRO_RUOTA;// avanzamento del centro nel periodo in mm
+	
+	DxCnt_k_1= letturaDx;							// memoria per prossimo ciclo
+	SxCnt_k_1= letturaSx;
+	
+	// integro teta
+	teta 	+= ((float)dDxCnt*GIRO_RUOTA_DX - (float)dSxCnt*GIRO_RUOTA_SX)*2.0/BASELINE;
+	
+	// constrain _theta to the range 0 to 2 pi
+	if (teta > DUE_PI) teta -= DUE_PI;
+	if (teta <    0.0) teta += DUE_PI;
+	
+	// integro posizioni
+	xpos    +=  deltaC*cos(teta);
+	ypos    +=  deltaC*sin(teta);
+	
+	// monitor dati
+	if (monitorDati){
+		Serial1.print(dDxCnt);
+		Serial1.print(", ");
+		Serial1.print(dSxCnt);
+		Serial1.print(", ");
+		Serial1.print(deltaC);
+		Serial1.print(", ");
+		Serial1.print(teta);
+		Serial1.print(", ");
+		Serial1.print(xpos);
+		Serial1.print(", ");
+		Serial1.print(ypos);
+		Serial1.print(", ");
+		Serial1.print(errore);
+		Serial1.println();
+	}
+
+}
+
+
 	void sendAnswer(char port, String risposta){
 	
 		if (debugBT){
@@ -773,8 +891,11 @@ static float rs;
 			P angolo pan
 			T angolo tilt
 			L laser (0=off, else On)
+			a xpos
+			b ypos
+			c teta
 			m misura con sonar [cm]
-			b legge tensione batteria
+			t legge tensione batteria
 			w
 			z
 			s	valore sterzo (lettura)
@@ -857,33 +978,39 @@ static int inByte;
 							smComandi = 10;
 							break;
 					// scrivo valore
-					case 'S': 
-					case 'D': 
-					case 'R': 
-					case 'V': 
-					case 'P': 
-					case 'T': 
-					case 'L': 
+					case 'A': 
 					case 'C': 
 					case 'K': 
+					case 'D': 
+					case 'L': 
+					case 'M': 
+					case 'P': 
+					case 'R': 
+					case 'S': 
+					case 'T': 
+					case 'V': 
 					case 'Z': 
 					case '1': 
 							smComandi = 1;		// stato a seconda del numero di
 												// parametri da ricevere
 						break;
 		
+					case 'a': 
+					case 'b': 
+					case 'c': 
 					case 'd': 
 					case 'e': 
-					case 'v': 
 					case 'l': 
-					case 'r': 
 					case 'm': 
-					case 'b': 
+					case 'r': 
 					case 's': 
+					case 't': 
+					case 'v': 
+					case 'x': 
 					case 'w': 
 					case 'z': 
-					case 'x': 
 					case '2': 
+					case '3': 
 							smComandi = 2;		// stato a seconda del numero di
 												// parametri da ricevere
 												// questa è lettura quindi segue subito risposta
@@ -924,10 +1051,12 @@ static int inByte;
 				if (inChar  != '\n') break;
 
 				switch (inCmd) {
-					case 'S': 
-							raggiorSterzo = x;
+		
+		
+					case 'A': 
+							tetaRef  = x*3.14/180.0;
 							smComandi = 0;		
-							risposta = "S: " + String( raggiorSterzo, 3);
+							risposta = "A: " + String( tetaRef, 3);
 						break;
 		
 					case 'D': 
@@ -936,38 +1065,6 @@ static int inByte;
 							risposta = "D: " + String( distanza, 3);
 						break;
 		
-					case 'R': 
-							statoRun = x;
-							smComandi = 0;		
-							risposta = "R: " + String(statoRun);
-						break;
-
-					case 'V': 
-							motorSpeedValue = x;
-							smComandi = 0;		
-							risposta = "V: " + String(motorSpeedValue);
-						break;
-		
-					case 'P': 
-							panAngle = x;
-							smComandi = 0;		
-							risposta = "P: " + String(panAngle);
-						break;
-		
-					case 'T': 
-							tiltAngle = 180 - x;		// servomotore girato
-							smComandi = 0;		
-							risposta = "T: " + String(x);
-						break;
-		
-					case 'L': 
-							laser = x;
-							smComandi = 0;		
-							risposta = "L: " + String(laser);
-							if (laser==0) 	digitalWrite(laserPin, LOW);
-							else			digitalWrite(laserPin, HIGH);
-						break;
-
 					case 'C': 
 							if (abs(x) < 1000) 
 								raggiorSterzo = LAGHEZZA_A_MEZZI/x;
@@ -983,6 +1080,50 @@ static int inByte;
 							risposta = "K: " + String(kp, 3);
 						break;
 
+					case 'L': 
+							laser = x;
+							smComandi = 0;		
+							risposta = "L: " + String(laser);
+							if (laser==0) 	digitalWrite(laserPin, LOW);
+							else			digitalWrite(laserPin, HIGH);
+						break;
+
+					case 'M': 
+							monitorDati = x;
+							smComandi = 0;		
+							risposta = "M: " + String(monitorDati);
+						break;
+
+					case 'P': 
+							panAngle = x;
+							smComandi = 0;		
+							risposta = "P: " + String(panAngle);
+						break;
+		
+					case 'R': 
+							statoRun = x;
+							smComandi = 0;		
+							risposta = "R: " + String(statoRun);
+						break;
+
+					case 'S': 
+							raggiorSterzo = x;
+							smComandi = 0;		
+							risposta = "S: " + String( raggiorSterzo, 3);
+						break;
+
+					case 'T': 
+							tiltAngle = 180 - x;		// servomotore girato
+							smComandi = 0;		
+							risposta = "T: " + String(x);
+						break;
+		
+					case 'V': 
+							motorSpeedValue = x;
+							smComandi = 0;		
+							risposta = "V: " + String(motorSpeedValue);
+						break;
+		
 					case 'Z': 
 							MAX_S = x;
 							smComandi = 0;		
@@ -995,6 +1136,22 @@ static int inByte;
 							risposta = "1: " + String(x, 3);
 						break;
 		
+					case 'a': 
+							smComandi = 0;		
+							risposta = "a: " + String(xpos);
+						break;
+		
+					case 'b': 
+							smComandi = 0;		
+							risposta = "b: " + String(ypos);
+						break;
+		
+					case 'c': 
+							smComandi = 0;		
+							risposta = "c: " + String(teta);
+						break;
+		
+
 					case 'd': 
 							smComandi = 0;		
 							risposta = "d: " + String(odometro);
@@ -1005,40 +1162,42 @@ static int inByte;
 							risposta = "e: " + String(errore);
 						break;
 		
-					case 'v': 
-							smComandi = 0;		
-							risposta = "v: " + String(motorSpeed);
-						break;
-
 					case 'l': 
 							smComandi = 0;		
 							risposta = "l: " + String(viaLibera);
 						break;
 						
-					case 'r': 
-							smComandi = 0;		
-							risposta = "r: " + String(statoRun);
-						break;
-
 					case 'm': 
 							smComandi = 0;		
 							misura = sonarMisura(5);
 							risposta = "m: " + String(misura);
 						break;
 
-					case 'b': 
+					case 'r': 
 							smComandi = 0;		
-							risposta = "b: " + String(analogRead(tensionePin));
+							risposta = "r: " + String(statoRun);
 						break;
 
 					case 's': 
 							smComandi = 0;		
 							risposta = "s: " + String(raggiorSterzo, 3);
 						break;
+						
+					case 't': 
+							smComandi = 0;		
+							risposta = "b: " + String(analogRead(tensionePin));
+						break;
+
+					case 'v': 
+							smComandi = 0;		
+							risposta = "v: " + String(motorSpeed);
+						break;
+
 					case 'w': 
 							smComandi = 0;		
 							risposta = "w: " + String(VB);
 						break;
+						
 					case 'z': 
 							smComandi = 0;		
 							risposta = "z: " + String(VA);
@@ -1053,7 +1212,12 @@ static int inByte;
 
 					case '2': 
 							smComandi = 0;		
-							risposta = "2: " + String(odometroCnt);
+							risposta = "Sx: " + String(odometroSxCnt);
+						break;
+
+					case '3': 
+							smComandi = 0;		
+							risposta = "Dx: " + String(odometroDxCnt);
 						break;
 				}
 				
