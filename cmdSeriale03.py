@@ -13,6 +13,7 @@ import io
 import time
 import matplotlib.pyplot as plt
 import math
+import sys
 
 debug 		= True
 waitReset 	= False
@@ -164,7 +165,7 @@ if __name__ == "__main__":
     # con timeout = 0 diventa non bloccante
     # ritorna subito e esegue quello che arriva quando arriva??
 #    ser = serial.Serial('/dev/ttyACM0', 9600, timeout=1, parity=serial.PARITY_NONE)
-    ser = serial.Serial('COM13', 38400, timeout=5, parity=serial.PARITY_NONE)
+    ser = serial.Serial('COM12', 38400, timeout=5, parity=serial.PARITY_NONE)
 #    ser = serial.Serial('COM11', 9600, timeout=5, parity=serial.PARITY_NONE)
     sio = io.TextIOWrapper(io.BufferedRWPair(ser, ser), newline = None)
 
@@ -200,7 +201,6 @@ if __name__ == "__main__":
 #        sendCmd('S', 90)
 #        print('sent S')
 
-    sendCmd('K', 12)
     sendCmd('P', 90)
     sendCmd('T', 90)
 
@@ -210,51 +210,33 @@ if __name__ == "__main__":
     sendCmd('L', 0)
     print('sent L')
     time.sleep(0.2)
+    sendCmd('K', 12)     # guadagno in modo sensore
+    sendCmd('B', 2)     # guadagno in modo odometro
 
 
-    distanza = 2000
+    distanza = 4000
     e, dTarget = sendReq('d')
     dTarget += distanza
 
     # passo 1
     sendCmd('D', distanza)
     print('sent D')
-    sendCmd('R', 1)
-    print('sent R')
-
-    ''' curva in movimento
-    
-    raggioCurva = 0.2
-    e, v = sendReq('d')
-    while ( v < (dTarget - 800)):
-        print ('distanza letta: %s' % (v))
-        e, v = sendReq('d')
-    sendCmd('R', 2)
-    print('sent R')
-    '''
-
-    waitEndRun()
-    
-    GRADI_90 = 160
-    # ruoto 90°
-    sendCmd('S', 1)   # 1 ruota ferma
-    print('sent S')
-
-    sendCmd('D', GRADI_90)
-    print('sent R')
-    sendCmd('R', 2)
+    sendCmd('R', 3)
     print('sent R')
 
     waitEndRun()
     
-    # avanzo 500 diritto
-    sendCmd('D', 1000)
-    print('sent D')
-    sendCmd('S', 0)   # diritto
-    sendCmd('R', 2)
+    sendCmd('A', -90)   # 1 ruota ferma
+    print('sent A')
+
+   
+    sendCmd('D', 1500)
+    print('sent R')
+    sendCmd('R', 4)
     print('sent R')
 
     waitEndRun()
+    
 
     ''' misura distanza dal muro e calcola angolo del T
 
@@ -269,10 +251,10 @@ if __name__ == "__main__":
     e = 1
     while( e ):
         e, dMuro = sendReq('m')
-    H = 90
+    H = 80
     altezzaLaser = 15
     angoloTilt = math.atan((H - altezzaLaser)/dMuro)
-    angoloTilt = floor(math.degrees(angoloTilt) + 90)
+    angoloTilt = math.floor(math.degrees(angoloTilt) + 90)
     
 
     sendCmd('T', angoloTilt)
@@ -284,20 +266,29 @@ if __name__ == "__main__":
     print('sent L')
     time.sleep(0.2)
 
-    # riotrno
-    sendCmd('D', GRADI_90*1.3)
-    print('sent D')
-    sendCmd('C', 0)
-    print('sent C')
-    sendCmd('R', 2)
+    sendCmd('P', 100)
+    time.sleep(0.5)
+    sendCmd('P', 80)
+    time.sleep(0.5)
+    sendCmd('P', 100)
+    time.sleep(0.5)
+    sendCmd('P', 80)
+    time.sleep(0.5)
+
+    # riotrno -------------------------
+
+    sendCmd('D', 1300)
+    sendCmd('A', 90)
     print('sent R')
+    sendCmd('R', 4)
+    print('sent R')
+
     waitEndRun()
 
-    # avanzo 500 diritto
-    sendCmd('D', 1000)
-    print('sent D')
-    sendCmd('S', 0)   # diritto
-    sendCmd('R', 2)
+    sendCmd('D', 4000)
+    sendCmd('A', 170)
+    print('sent R')
+    sendCmd('R', 11)
     print('sent R')
 
     waitEndRun()
