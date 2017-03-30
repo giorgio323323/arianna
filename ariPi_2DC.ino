@@ -34,7 +34,7 @@
 			code 0000
 			http://wiki.seeedstudio.com/wiki/Bluetooth_Bee
 			
-		
+	23mar17 ID_001 rimosso limite angolo teta		
 
 10	verde con punto nero
 11  blu e bianco
@@ -179,6 +179,7 @@ int 	tiltAngle 		= 90;
 char 	laser 			= 0;
 int 	misura;
 float	kp 				= KP_DEF;		// k proporzionale
+float	kpTeta			= 2.0;			// k proporzionale per teta
 float 	MAX_S			= 0.2;			// max_s = LAGHEZZA_A_MEZZI/Raggio massimo 
 float 	teta 			= 0.0;					// teta attuale
 float 	xpos, ypos 		= 0.0;
@@ -355,6 +356,8 @@ void loop() {
 			servoPan.write(panAngle);
 			servoTilt.write(tiltAngle);
 			kp = KP_DEF;
+			digitalWrite( R_SIDE_FRONT,  LOW);
+			digitalWrite( L_SIDE_FRONT, HIGH);
 			firstRun = 0;
 		}
 	
@@ -386,13 +389,11 @@ void loop() {
 
 				lastTime = millis();
 
-
-
 				noInterrupts();
 					measureAvailable = 0;
 					errore 		= 0.5 - misuraSideIR(0); // 1=libero  0=vicino
 				interrupts();
-
+				
 				
 				// controllo sterzo da sensore laterale dx
 				if ((statoRun == 1)||(statoRun == 3)){
@@ -428,7 +429,10 @@ void loop() {
 				}
 
 				// controllo sterzo da teta odometro
-				if (statoRun == 4){
+				/* stato 11 e 13 fanno si se si incontra  il sensore laterale
+					il controllo passa a questo
+				*/
+				if ((statoRun == 4)||(statoRun == 11)||(statoRun == 13)){
 					// Kp 1 ok
 					// if teta > 3.14 -> teta -= 6.28
 					// 0 - (6.27 - 6.28) = 0 - (-0.1) = atteso 0.1
@@ -436,13 +440,34 @@ void loop() {
 					// 3.14 - 3.13 = 0.1
 					// 3.14 - (3.15 - 6.28) = 6.27
 					// if errore > 3.14 errore -= 6.28
+					/* ID_001
 					if (teta > 3.14) teta_ = teta - DUE_PI;
 					else			 teta_ = teta;
 					
 					errore = tetaRef - teta_;
 					if (errore > 3.14) errore -= DUE_PI;
+					*/
+
+					if (statoRun == 11) {
+						digitalWrite( R_SIDE_FRONT,  LOW);
+						digitalWrite( L_SIDE_FRONT, HIGH);
+						
+						if (errore >= 0.0){
+							statoRun = 1; // 1=libero  0=vicino
+						}
+					}
+					if (statoRun == 13){
+						digitalWrite( R_SIDE_FRONT, HIGH);
+						digitalWrite( L_SIDE_FRONT,  LOW);
+						
+						if (errore >= 0.0){
+							statoRun = 3; // 1=libero  0=vicino
+						}
+
+					}
 					
-					raggiorSterzo =   kp*errore; // aggiunto in differenziale + S_NEUTRO; 
+					errore = tetaRef - teta;	// ID_001
+					raggiorSterzo =   kpTeta*errore; // aggiunto in differenziale + S_NEUTRO; 
 					// errore +/- 0.5
 					
 					if (raggiorSterzo < -1.0) raggiorSterzo = -1.0;
@@ -496,7 +521,7 @@ void loop() {
 				if (statoRun == 0) motorSpeedRef = 0;
 				
 				// rampa sulla velocita'
-				if (motorSpeedRef > motorSpeed)	motorSpeed += 5;
+				if (motorSpeedRef > motorSpeed)	motorSpeed += 2;
 				if (motorSpeedRef < motorSpeed)	motorSpeed -= 15;
 
 				if (motorSpeed > 250) motorSpeed = 250;
@@ -772,24 +797,33 @@ raggiorSterzo indica lo scorrimento che applichiamo alle ruote
 
 void differenziale(float motorSpeed){
 static float rs;
+static float Vlimite;
 
 	if (direzione)	rs = raggiorSterzo + S_NEUTRO_FWD;
 	else			rs = raggiorSterzo - S_NEUTRO_REV;
 	
-	
-	if (rs >  1.0) rs =  1.0;
-	if (rs < -1.0) rs = -1.0;
-	
+	/* quando viene fatta una curva con una ruota bloccata l'altra ruota va a 255.
+	   partendo da fermo ci può essere slittamento.
+	   In questo caso si limita la velocità della ruota che marcia.
+	*/
+	Vlimite = 255;
+	if (rs >  1.0){
+		rs =  1.0;
+		Vlimite = motorSpeed;
+	}
+	if (rs < -1.0){
+		rs = -1.0;
+		Vlimite = motorSpeed;
+	}
 	
 	VA = motorSpeed*(1.0+rs);
 	VB = motorSpeed*(1.0-rs);
 	
-	if (VA > 255) VA = 255;
+	if (VA > Vlimite) VA = Vlimite;
 	if (VA <   0) VA =   0;
 	
-	if (VB > 255) VB = 255;
+	if (VB > Vlimite) VB = Vlimite;
 	if (VB <   0) VB =   0;
-
 	
 	if (direzione){
 		driver.motorAReverse(VA);
@@ -834,9 +868,11 @@ static float deltaC;			// delta cnt
 	teta 	+= ((float)dDxCnt*GIRO_RUOTA_DX - (float)dSxCnt*GIRO_RUOTA_SX)*2.0/BASELINE;
 	
 	// constrain _theta to the range 0 to 2 pi
+	
+	/* ID_001
 	if (teta > DUE_PI) teta -= DUE_PI;
 	if (teta <    0.0) teta += DUE_PI;
-	
+	*/
 	// integro posizioni
 	xpos    +=  deltaC*cos(teta);
 	ypos    +=  deltaC*sin(teta);
@@ -879,6 +915,8 @@ static float deltaC;			// delta cnt
 			S Scrivo sterzo e suo angolo						[gradi] 90 diritto 
 																		180 dx
 																		0   sx
+			A tetaRef														
+			B kpTeta														
 			D scrivo distanza relativa da percorrere e valore 	[mm]
 			d lettura distanza assoluta (odometro)				[mm]
 			V scrivo setpoint velocita' con valore motorSpeedValue
@@ -979,6 +1017,7 @@ static int inByte;
 							break;
 					// scrivo valore
 					case 'A': 
+					case 'B': 
 					case 'C': 
 					case 'K': 
 					case 'D': 
@@ -1059,6 +1098,12 @@ static int inByte;
 							risposta = "A: " + String( tetaRef, 3);
 						break;
 		
+					case 'B': 
+							kpTeta = x;
+							smComandi = 0;		
+							risposta = "B: " + String(kpTeta, 3);
+						break;
+
 					case 'D': 
 							distanza += x;
 							smComandi = 0;		
