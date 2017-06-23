@@ -39,13 +39,11 @@
 	14mag17 si aggiunge comunicazione con esp ID_002
 			si usa la serial2 verso esp
 			modifica protocollo Alessandro Airaghi
+			
+	21mag17 ripristinato BT in parallelo ID_003
+			Ok
 
-  12giu17 aggiunto comado di home, prende la posizione attuale come 0, 0, 0
-  
-
-da fare
-! flush
-? terminatore
+	07giu17 cambiati encoder
 
 
 
@@ -119,7 +117,7 @@ int direzione 		= 1;
 #define SERVO_PAN_PIN  		45    	// Digital IO pin connected to the servo pin.
 #define SERVO_TILT_PIN  	44    	// Digital IO pin connected to the servo pin.
 
-#define L_SIDE_IR			2
+#define L_SIDE_IR			2		// non usato, dichiarato come ingresso ma libero
 #define R_SIDE_IR			3		// sensore IR dx
 #define GIRO_DX_PIN			21		// sensore su rotazione albero motore
 #define GIRO_SX_PIN			20		// sensore su rotazione albero motore
@@ -174,16 +172,16 @@ float lastPosition;
 
 
 // aggiorno per encoder da 35 ppr prima erano 20 
-#define GIRO_RUOTA      1.5   //  2.625 // 5.25 // mm per impulso*0.5 = sviluppo ruota[mm]/ppr (pulsi per rivoluzione)
-#define GIRO_RUOTA_DX     1.5   //  2.625 // 5.25 
-#define GIRO_RUOTA_SX     1.494  // 2.615   // 5.25 
-#define MIN_TIME_TRA_PULSE  5     //9 // 18 // tempo minimo tra impulsi encoder per evitare errate letture
+#define GIRO_RUOTA  		1.5   //  2.625	// 5.25	// mm per impulso*0.5 = sviluppo ruota[mm]/ppr (pulsi per rivoluzione)
+#define GIRO_RUOTA_DX   	1.5   //	2.625	// 5.25	
+#define GIRO_RUOTA_SX  		1.494  //	2.615 	// 5.25	
+#define MIN_TIME_TRA_PULSE 	5   	//9	// 18	// tempo minimo tra impulsi encoder per evitare errate letture
 
 /*
-#define GIRO_RUOTA      2.625 // 5.25 // mm per impulso*0.5 = sviluppo ruota[mm]/ppr (pulsi per rivoluzione)
-#define GIRO_RUOTA_DX     2.625 // 5.25 
-#define GIRO_RUOTA_SX     2.615   // 5.25 
-#define MIN_TIME_TRA_PULSE  9   // 18 // tempo minimo tra impulsi encoder per evitare errate letture
+#define GIRO_RUOTA  		2.625	// 5.25	// mm per impulso*0.5 = sviluppo ruota[mm]/ppr (pulsi per rivoluzione)
+#define GIRO_RUOTA_DX  		2.625	// 5.25	
+#define GIRO_RUOTA_SX  		2.615 	// 5.25	
+#define MIN_TIME_TRA_PULSE 	9		// 18	// tempo minimo tra impulsi encoder per evitare errate letture
 */
 
 #define E_POSIZIONAMENTO  	10
@@ -354,11 +352,11 @@ tolto t2 ovf end */
 
 
 	// ID_002 gestire BT e Wifi
- /*
+ 
 	while (!digitalRead(BT_CONNECTION_PIN)){
 		;
 	}
- */
+ 
 	BTstate = 1;
 		Serial.print("BT connection: ");
 		Serial.println(digitalRead(BT_CONNECTION_PIN));
@@ -390,7 +388,7 @@ void loop() {
 	BTstate = digitalRead(BT_CONNECTION_PIN);
 	
 	// ID_002
-	//getCmd(); 
+	getCmd(); // ID_003
 	
 	getCmd2();
 	rSeriale();
@@ -680,12 +678,11 @@ unsigned long pulseTime;
 	if ((millis() - pulseTime) < MIN_TIME_TRA_PULSE) return;
 	pulseTime = millis();
 
+	if (statoRun == 0) return;
+	//Serial.println("dx");
 
-//	Serial.println("dx");
 	digitalWrite(ledPin, !digitalRead(ledPin));
-
-  if (statoRun == 0) return;
-  if (direzione == AVANTI)  odometroDxCnt ++;
+	if (direzione == AVANTI)  odometroDxCnt ++;
 	else                      odometroDxCnt --;
     
 }
@@ -696,10 +693,10 @@ unsigned long pulseTime;
 	if ((millis() - pulseTime) < MIN_TIME_TRA_PULSE) return;
 	pulseTime = millis();
 
-//	Serial.println("Sx");
-  digitalWrite(ledPin, !digitalRead(ledPin));
+	if (statoRun == 0) return;
+	//Serial.println("Sx");
 
-  if (statoRun == 0) return;
+	digitalWrite(ledPin, !digitalRead(ledPin));
 	if (direzione == AVANTI)  odometroSxCnt ++;
 	else                      odometroSxCnt --;
 
@@ -956,8 +953,8 @@ static float deltaC;			// delta cnt
 
 	void sendAnswer(char port, String risposta){
 
-    risposta += '_';
 		if (debugBT){
+			risposta += '_';
 			Serial.print("cm: ");
 			Serial.println(risposta);
 		}
@@ -1008,8 +1005,8 @@ static float x, y;
 static char smComandi = 0;
 static char inCmd;
 static unsigned long time, cmdTime;
-//static char port, inChar;
-static char inChar;
+static char portCmd, inChar;
+//static char inChar;
 static String risposta;
 
 static int inByte;
@@ -1034,50 +1031,48 @@ static int inByte;
 	// se il pacchetto non arriva completo in un secondo 
 	// resetto ricezione
 	if ((smComandi != 0) && ((millis() - cmdTime) > 3000 )) {
-    if (port == 0)   Serial.println("Timeout");
-    if (port == 1)  Serial1.println("Timeout");
-    if (port == 2)  Serial2.println("Timeout");
+		if (portCmd == 0)   Serial.println("Timeout");
+		if (portCmd == 1)  Serial1.println("Timeout");
+		if (portCmd == 2)  Serial2.println("Timeout");
 		
 		if (debugBT){
 			Serial.println("timeOut");
 		}
 		
 		Serial.flush();
-    Serial1.flush();
-    Serial2.flush();
+		Serial1.flush();
+		//Serial2.flush();
 	
 		smComandi = 0;
 	}
 
  
-  BTstate = 1;
+	BTstate = 1;
 
   
 	// se BT connesso gestisco caratteri da BT
 	if ( ( Serial.available() > 0)				|| 
-       (Serial2.available() > 0)       || 
 	    ((Serial1.available() > 0) && BTstate))  {
 
-      
 
 		switch (smComandi) {
 			case 0: // attesa 1rst valore
 
-        // ID_002
-        if ( Serial.available () > 0) port = 0;     // seriale usb
-        if (Serial1.available () > 0) port = 1;     // BT
-        if (Serial2.available () > 0) port = 2;     // esp
+				// ID_002
+				if ( Serial.available () > 0) portCmd = 0;     // seriale usb
+				if (Serial1.available () > 0) portCmd = 1;     // BT
+				// if (Serial2.available () > 0) port = 2;     // esp		ID_003
 
-        if (port == 0) inCmd =  Serial.read();
-        if (port == 1) inCmd = Serial1.read();
-        if (port == 2) inCmd = Serial2.read();
+				if (portCmd == 0) inCmd =  Serial.read();
+				if (portCmd == 1) inCmd = Serial1.read();
+				if (portCmd == 2) inCmd = Serial2.read();
 				cmdTime = millis();
 
-        debugBT = 1;
-				if (debugBT){
-					Serial.print("inCmd: ");
-					Serial.println(inCmd);
-				}
+				debugBT = 1;
+						if (debugBT){
+							Serial.print("inCmd: ");
+							Serial.println(inCmd);
+						}
 				
 				switch (inCmd) {
 					case '+':
@@ -1125,12 +1120,13 @@ static int inByte;
 						break;
 				}
 				break;
-			case 1: // attende 1 valore
-				// look for the next valid integer in the incoming serial stream:
 				
-        if (port == 0)  x =  Serial.parseFloat();
-        if (port == 1)  x = Serial1.parseFloat();
-        if (port == 2)  x = Serial2.parseFloat();
+			case 1: // attende 1 valore
+				// look for the next valid float in the incoming serial stream:
+				
+				if (portCmd == 0)  x =  Serial.parseFloat();
+				if (portCmd == 1)  x = Serial1.parseFloat();
+				if (portCmd == 2)  x = Serial2.parseFloat();
 
 				smComandi = 2; 	// mette in esecuzione valore
 
@@ -1146,15 +1142,15 @@ static int inByte;
 				
 			case 2: // attesa terminatore
 
-        if (port == 0)  inChar =  Serial.parseFloat();
-        if (port == 1)  inChar = Serial1.parseFloat();
-        if (port == 2)  inChar = Serial2.parseFloat();
+				if (portCmd == 0)  inChar =  Serial.read();
+				if (portCmd == 1)  inChar = Serial1.read();
+				if (portCmd == 2)  inChar = Serial2.read();
 
 				if (debugBT){
 					Serial.print("eol: ");
 					Serial.println(inChar);
 				}
-				if (inChar  != '\n') break;
+				if ((inChar  != '\n') && (inChar  != '\r'))  break;
 
 				switch (inCmd) {
 	
@@ -1194,9 +1190,15 @@ static int inByte;
 					case 'L': 
 							laser = x;
 							smComandi = 0;		
-							risposta = "L: " + String(laser);
-							if (laser==0) 	digitalWrite(laserPin, LOW);
-							else			digitalWrite(laserPin, HIGH);
+							risposta = "L: ";// + String(laser);
+							if (laser==0){
+								digitalWrite(laserPin, LOW);
+								risposta += "0";
+								}
+							else{
+								digitalWrite(laserPin, HIGH);
+								risposta += "1";
+							}
 						break;
 
 					case 'M': 
@@ -1332,16 +1334,16 @@ static int inByte;
 						break;
 				}
 				
-				sendAnswer(port, risposta);
+				sendAnswer(portCmd, risposta);
 				
 				break;
 			case 10: // attesa terminatore BT
      
-        if (port == 0)  inChar =  Serial.parseFloat();
-        if (port == 1)  inChar = Serial1.parseFloat();
-        if (port == 2)  inChar = Serial2.parseFloat();
+					if (portCmd == 0)  inChar =  Serial.read();
+					if (portCmd == 1)  inChar = Serial1.read();
+					if (portCmd == 2)  inChar = Serial2.read();
 					
-					if (inCmd == '\n') smComandi = 0;
+					if ((inCmd == '\n') || (inCmd == '\r')) smComandi = 0;
 					
 					if (debugBT){
 						Serial.print("eoldBT: ");
@@ -1474,29 +1476,23 @@ static float x, y;
 					risposta = "B: " + String(kpTeta, 3);
 				break;
 
-      case 'C': 
-          if (abs(x) < 1000) 
-            raggiorSterzo = LAGHEZZA_A_MEZZI/x;
-          else
-            raggiorSterzo = 0.0;
-          risposta = "S: " + String(raggiorSterzo, 3);
-        break;
-
 			case 'D': 
 					distanza += x;
 					risposta = "D: " + String( distanza, 3);
 				break;
 
+			case 'C': 
+					if (abs(x) < 1000) 
+						raggiorSterzo = LAGHEZZA_A_MEZZI/x;
+					else
+						raggiorSterzo = 0.0;
+					risposta = "S: " + String(raggiorSterzo, 3);
+				break;
 
 			case 'K': 
 					kp = x;
 					risposta = "K: " + String(kp, 3);
 				break;
-
-      case 'H': 
-          xpos = ypos = teta = 0.0;
-          risposta = "H: " + String(0, 3) ;
-        break;
 
 			case 'L': 
 					Serial.println(x);
