@@ -44,7 +44,9 @@
 			Ok
 
 	07giu17 cambiati encoder
-
+			# come indicatore inizio msg monitor
+			  aggiunto comado di home 'H', prende la posizione attuale come 0, 0, 0
+			cambiato terminatore seriale, da println a print + \n ID_004
 
 
 
@@ -932,6 +934,7 @@ static float deltaC;			// delta cnt
 	
 	// monitor dati
 	if (monitorDati){
+    Serial1.print("#, ");
 		Serial1.print(dDxCnt);
 		Serial1.print(", ");
 		Serial1.print(dSxCnt);
@@ -945,7 +948,8 @@ static float deltaC;			// delta cnt
 		Serial1.print(ypos);
 		Serial1.print(", ");
 		Serial1.print(errore);
-		Serial1.println();
+		//Serial1.println();
+		Serial1.print('\n');//		ID_004
 	}
 
 }
@@ -958,8 +962,15 @@ static float deltaC;			// delta cnt
 			Serial.print("cm: ");
 			Serial.println(risposta);
 		}
-		if (port)	Serial1.println(risposta);
-		else		 Serial.println(risposta);
+		//ID_004
+		if (port)	{
+			Serial1.print(risposta);
+			Serial1.print('\n');
+		}
+		else{
+			Serial.print(risposta);
+			Serial.print('\n');
+		}
 	}
 /*
 	verifica se arrivano caratteri da seriale
@@ -1083,8 +1094,9 @@ static int inByte;
 					case 'A': 
 					case 'B': 
 					case 'C': 
-					case 'K': 
 					case 'D': 
+					case 'K': 
+					case 'H': 
 					case 'L': 
 					case 'M': 
 					case 'P': 
@@ -1186,6 +1198,11 @@ static int inByte;
 							smComandi = 0;		
 							risposta = "K: " + String(kp, 3);
 						break;
+
+					case 'H': 
+						xpos = ypos = teta = 0.0;
+						risposta = "H: " + String(0, 3) ;
+					break;
 
 					case 'L': 
 							laser = x;
